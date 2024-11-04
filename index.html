@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Massachusetts Towns Choropleth Maps</title>
+    <!-- Include D3.js and TopoJSON -->
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <script src="https://d3js.org/topojson.v1.min.js"></script>
+    <style>
+        /* Common styles */
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+        h1, h3 {
+            margin: 10px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .map {
+            margin: 20px 0;
+            position: relative;
+        }
+        #tooltip {
+            position: absolute;
+            opacity: 0;
+            background: white;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            pointer-events: none;
+            font-family: sans-serif;
+            font-size: medium;
+            line-height: 1;
+        }
+        path {
+            stroke: #333;
+            stroke-width: 0.5px;
+        }
+        path:hover {
+            opacity: 0.7;
+            stroke-width: 2px;
+        }
+        .legend {
+            font-size: 12px;
+        }
+        .legend rect {
+            stroke: #ccc;
+            stroke-width: 0.5px;
+        }
+        .legend text {
+            fill: #000;
+            text-anchor: start;
+            alignment-baseline: middle;
+        }
+    </style>
+</head>
+<body>
+    <h1>Massachusetts Towns Choropleth Maps</h1>
+    <h3>Vishal Sunil Kumar</h3>
+    <div class="container">
+        <div id="mapA" class="map"></div>
+        <div id="mapB" class="map"></div>
+        <div id="mapC" class="map"></div>
+    </div>
+    <div id="tooltip"></div>
+    <script>
+        const width = 800;
+        const height = 600;
+        const margin = 50;
+
+        // Create SVG elements for the maps
+        const svgA = d3.select("#mapA").append("svg")
+            .attr("width", width)
+            .attr("height", height);
+
+        const svgB = d3.select("#mapB").append("svg")
+            .attr("width", width)
+            .attr("height", height);
+
+        const svgC = d3.select("#mapC").append("svg")
+            .attr("width", width)
+            .attr("height", height);
+
+        const tooltip = d3.select("#tooltip");
+
+        // Load data files
+        Promise.all([
+            d3.json("./data/towns.topojson"),
+            d3.csv("./data/gini_index.csv")
+        ]).then(([topoData, giniData]) => {
+            const geojson = topojson.feature(topoData, topoData.objects.ma);
+
+            // Define projection and path generator
+            const projection = d3.geoMercator()
+                .fitSize([width - margin, height - margin], geojson);
+
+            const path = d3.geoPath().projection(projection);
+
+            // Map A: Population in 1980
+            const pop1980Values = geojson.features.map(d => +d.properties.POP1980);
+            const colorScaleA = d3.scaleSequential(d3.interpolateBlues)
+                .domain(d3.extent(pop1980Values));
+
+            // Map B: Population change from 1980 to 2010
+            const popChangeValues = geojson.features.map(d => {
+                const pop1980 = +d.properties.POP1980;
+                const pop2010 = +d.properties.POP2010;
+                return pop2010 - pop1980;
+            });
+            const colorScaleB = d3.scaleSequential(d3.interpolateRdYlGn)
+                .domain(d3.extent(popChangeValues));
+
+            // Map C: Map by county colors
+            const countyData = [ 
+                { "county": "Barnstable County", "fips_code": "25001" },
+                { "county": "Berkshire County", "fips_code": "25003" },
+                { "county": "Bristol County", "fips_code": "25005" },
+                { "county": "Dukes County", "fips_code": "25007" },
+                { "county": "Essex County", "fips_code": "25009" },
+                { "county": "Franklin County", "fips_code": "25011" },
+                { "county": "Hampden County", "fips_code": "25013" },
+                { "county": "Hampshire County", "fips_code": "25015" },
+                { "county": "Middlesex County", "fips_code": "25017" },
+                { "county": "Nantucket County", "fips_code": "25019" },
+                { "county": "Norfolk County", "fips_code": "25021" },
+                { "county": "Plymouth County", "fips_code": "25023" },
+                { "county": "Suffolk County", "fips_code": "25025" },
+                { "county": "Worcester County", "fips_code": "25027" } 
+            ];
+
+            // Create a color scale for counties
+            const countyColorScale = d3.scaleOrdinal()
+                .domain(countyData.map(d => d.fips_code))
+                .range(d3.schemeCategory10);
+
+            // Function to get county color based on FIPS code
+            function getCountyColor(fips_code) {
+                return countyColorScale(fips_code);
+            }
+
+            // Process Gini index data
+            const giniMap = {};
+            giniData.forEach(d => {
+                giniMap[d.fips_code] = +d["Gini Index"];
+            });
+
+            // Draw Map A
+            function drawMapA() {
+                svgA.selectAll("path")
+                    .data(geojson.features)
+                    .enter().append("path")
+                    .attr("d", path)
+                    .attr("fill", d => {
+                        const value = +d.properties.POP1980;
+                        return value ? colorScaleA(value) : "#ccc";
+                    })
+                    .on("mouseenter", (event, d) => {
+                        tooltip.transition().duration(200).style("opacity", 0.9);
+                        tooltip.html(`
+                            <strong>${d.properties.TOWN}</strong><br>
+                            Population 1980: ${d.properties.POP1980}
+                        `)
+                            .style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    })
+                    .on("mousemove", (event) => {
+                        tooltip.style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    })
+                    .on("mouseleave", () => {
+                        tooltip.transition().duration(500).style("opacity", 0);
+                    });
+
+                // Add Legend for Map A
+                const legendWidth = 300;
+                const legendHeight = 10;
+                const legendMargin = { top: 20, right: 20, bottom: 0, left: 20 };
+
+                const legendSvg = svgA.append("g")
+                    .attr("class", "legend")
+                    .attr("transform", `translate(${(width - legendWidth) / 2}, ${height - 30})`);
+
+                const defs = legendSvg.append("defs");
+
+                const linearGradient = defs.append("linearGradient")
+                    .attr("id", "legend-gradientA");
+
+                linearGradient.selectAll("stop")
+                    .data([
+                        { offset: "0%", color: colorScaleA.range()[0] },
+                        { offset: "100%", color: colorScaleA.range()[1] }
+                    ])
+                    .enter().append("stop")
+                    .attr("offset", d => d.offset)
+                    .attr("stop-color", d => d.color);
+
+                legendSvg.append("rect")
+                    .attr("width", legendWidth)
+                    .attr("height", legendHeight)
+                    .style("fill", "url(#legend-gradientA)");
+
+                // Legend scale
+                const xScaleLegendA = d3.scaleLinear()
+                    .domain(d3.extent(pop1980Values))
+                    .range([0, legendWidth]);
+
+                // Legend axis
+                const xAxisLegendA = d3.axisBottom(xScaleLegendA)
+                    .ticks(5)
+                    .tickFormat(d3.format(".0f"));
+
+                legendSvg.append("g")
+                    .attr("transform", `translate(0, ${legendHeight})`)
+                    .call(xAxisLegendA);
+
+                legendSvg.append("text")
+                    .attr("x", legendWidth / 2)
+                    .attr("y", -10)
+                    .attr("text-anchor", "middle")
+                    .text("Population in 1980");
+            }
+
+            // Draw Map B
+            function drawMapB() {
+                svgB.selectAll("path")
+                    .data(geojson.features)
+                    .enter().append("path")
+                    .attr("d", path)
+                    .attr("fill", d => {
+                        const pop1980 = +d.properties.POP1980;
+                        const pop2010 = +d.properties.POP2010;
+                        const value = pop2010 - pop1980;
+                        return value ? colorScaleB(value) : "#ccc";
+                    })
+                    .on("mouseenter", (event, d) => {
+                        tooltip.transition().duration(200).style("opacity", 0.9);
+                        tooltip.html(`
+                            <strong>${d.properties.TOWN}</strong><br>
+                            Population 1980: ${d.properties.POP1980}<br>
+                            Population 2010: ${d.properties.POP2010}<br>
+                            Change: ${d.properties.POP2010 - d.properties.POP1980}
+                        `)
+                            .style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    })
+                    .on("mousemove", (event) => {
+                        tooltip.style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    })
+                    .on("mouseleave", () => {
+                        tooltip.transition().duration(500).style("opacity", 0);
+                    });
+
+                // Add Legend for Map B
+                const legendWidth = 300;
+                const legendHeight = 10;
+                const legendMargin = { top: 20, right: 20, bottom: 0, left: 20 };
+
+                const legendSvg = svgB.append("g")
+                    .attr("class", "legend")
+                    .attr("transform", `translate(${(width - legendWidth) / 2}, ${height - 30})`);
+
+                const defs = legendSvg.append("defs");
+
+                const linearGradient = defs.append("linearGradient")
+                    .attr("id", "legend-gradientB");
+
+                linearGradient.selectAll("stop")
+                    .data([
+                        { offset: "0%", color: colorScaleB.range()[0] },
+                        { offset: "50%", color: colorScaleB(0) },
+                        { offset: "100%", color: colorScaleB.range()[1] }
+                    ])
+                    .enter().append("stop")
+                    .attr("offset", d => d.offset)
+                    .attr("stop-color", d => d.color);
+
+                legendSvg.append("rect")
+                    .attr("width", legendWidth)
+                    .attr("height", legendHeight)
+                    .style("fill", "url(#legend-gradientB)");
+
+                // Legend scale
+                const xScaleLegendB = d3.scaleLinear()
+                    .domain(d3.extent(popChangeValues))
+                    .range([0, legendWidth]);
+
+                // Legend axis
+                const xAxisLegendB = d3.axisBottom(xScaleLegendB)
+                    .ticks(5)
+                    .tickFormat(d3.format(".0f"));
+
+                legendSvg.append("g")
+                    .attr("transform", `translate(0, ${legendHeight})`)
+                    .call(xAxisLegendB);
+
+                legendSvg.append("text")
+                    .attr("x", legendWidth / 2)
+                    .attr("y", -10)
+                    .attr("text-anchor", "middle")
+                    .text("Population Change (1980-2010)");
+            }
+
+            // Draw Map C with Gini index tooltip
+            function drawMapC() {
+                svgC.selectAll("path")
+                    .data(geojson.features)
+                    .enter().append("path")
+                    .attr("d", path)
+                    .attr("fill", d => {
+                        const fips = d.properties.FIPS_STCO.toString().padStart(5, '0');
+                        return getCountyColor(fips);
+                    })
+                    .on("mouseenter", (event, d) => {
+                        tooltip.transition().duration(200).style("opacity", 0.9);
+                        const fips = d.properties.FIPS_STCO.toString().padStart(5, '0');
+                        const county = countyData.find(c => c.fips_code === fips);
+                        const countyName = county ? county.county : "Unknown County";
+                        const giniIndex = giniMap[fips];
+
+                        // Create the tooltip content
+                        tooltip.html(`
+                            <strong>${d.properties.TOWN}</strong><br>
+                            County: ${countyName}<br>
+                            Gini Index (2019): ${giniIndex ? giniIndex.toFixed(4) : "Not available"}
+                        `)
+                            .style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    })
+                    .on("mousemove", (event) => {
+                        tooltip.style("left", (event.pageX + 10) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    })
+                    .on("mouseleave", () => {
+                        tooltip.transition().duration(500).style("opacity", 0).on("end", () => {
+                            tooltip.html(""); // Clear the tooltip content
+                        });
+                    });
+
+                // Add Legend for Map C
+                const legendSvg = svgC.append("g")
+                    .attr("class", "legend")
+                    .attr("transform", `translate(${width - 150}, ${50})`);
+
+                const legendItemSize = 18;
+                const legendSpacing = 4;
+
+                countyData.forEach((county, index) => {
+                    const legendRow = legendSvg.append("g")
+                        .attr("transform", `translate(0, ${index * (legendItemSize + legendSpacing)})`);
+
+                    legendRow.append("rect")
+                        .attr("width", legendItemSize)
+                        .attr("height", legendItemSize)
+                        .attr("fill", getCountyColor(county.fips_code));
+
+                    legendRow.append("text")
+                        .attr("x", legendItemSize + legendSpacing)
+                        .attr("y", legendItemSize / 2)
+                        .attr("dy", "0.35em")
+                        .text(county.county);
+                });
+
+                legendSvg.append("text")
+                    .attr("x", 0)
+                    .attr("y", -10)
+                    .attr("text-anchor", "start")
+                    .text("Counties");
+            }
+
+            // Call the functions to draw the maps
+            drawMapA();
+            drawMapB();
+            drawMapC();
+
+        }).catch(error => {
+            console.error("Error loading data:", error);
+        });
+    </script>
+</body>
+</html>
